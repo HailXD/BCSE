@@ -2,7 +2,7 @@
 from typing import Any
 
 
-from ... import helper
+from ... import helper, user_input_handler
 from . import story_level_id_selector
 
 CHAPTERS = [
@@ -16,6 +16,31 @@ CHAPTERS = [
     "Cats of the Cosmos 2",
     "Cats of the Cosmos 3",
 ]
+
+
+def set_specific_clear_counts(
+    save_stats: dict[str, Any], chapter_id: int, clear_counts: list[int]
+) -> dict[str, Any]:
+    """Set clear counts for specific levels in a chapter"""
+    story_chapters = save_stats["story_chapters"]
+
+    # Apply new clear counts
+    for i, count in enumerate(clear_counts):
+        if count != -1:  # -1 means no change
+            if i < len(story_chapters["Times Cleared"][chapter_id]):
+                story_chapters["Times Cleared"][chapter_id][i] = count
+
+    # Recalculate chapter progress
+    max_progress = 0
+    # Find the highest stage index with a clear count > 0
+    for i, count in enumerate(story_chapters["Times Cleared"][chapter_id]):
+        if count > 0:
+            max_progress = i + 1
+
+    story_chapters["Chapter Progress"][chapter_id] = max_progress
+
+    save_stats["story_chapters"] = story_chapters
+    return save_stats
 
 
 def clear_specific_level_ids(
@@ -106,13 +131,26 @@ def clear_each(save_stats: dict[str, Any]):
 
     chapter_ids = story_level_id_selector.select_specific_chapters()
 
+    choice = story_level_id_selector.get_option()
     for chapter_id in chapter_ids:
         helper.colored_text(f"Chapter: &{chapter_id+1}& : &{CHAPTERS[chapter_id]}&")
         formatted_id = format_story_id(chapter_id)
-        progress = story_level_id_selector.select_level_progress(
-            chapter_id, get_total_stages(save_stats, formatted_id)
+
+        total_stages = get_total_stages(save_stats, formatted_id)
+        stage_ids = story_level_id_selector.select_levels(
+            chapter_id, choice, total_stages
         )
-        save_stats = clear_specific_level_ids(save_stats, formatted_id, progress)
+
+        clear_counts = [-1] * total_stages
+        clear_counts = user_input_handler.handle_all_at_once(
+            stage_ids,
+            False,
+            clear_counts,
+            list(range(1, total_stages + 1)),
+            "clear count",
+            "stage",
+        )
+        save_stats = set_specific_clear_counts(save_stats, formatted_id, clear_counts)
     helper.colored_text("Successfully set main story chapters")
     return save_stats
 
@@ -125,11 +163,22 @@ def clear_all(save_stats: dict[str, Any]) -> dict[str, Any]:
     for chapter_id in chapter_ids:
         text += f"Chapter: &{chapter_id+1}& : &{CHAPTERS[chapter_id]}&\n"
     helper.colored_text(text.strip("\n"))
-    progress = story_level_id_selector.select_level_progress(
-        None, get_total_stages(save_stats, 0)
+
+    total_stages = get_total_stages(save_stats, 0)
+    stage_ids = story_level_id_selector.select_levels(None, total=total_stages)
+    clear_counts = [-1] * total_stages
+
+    clear_counts = user_input_handler.handle_all_at_once(
+        stage_ids,
+        True,
+        clear_counts,
+        list(range(1, total_stages + 1)),
+        "clear count",
+        "stage",
     )
+
     for chapter_id in chapter_ids:
         chapter_id = format_story_id(chapter_id)
-        save_stats = clear_specific_level_ids(save_stats, chapter_id, progress)
+        save_stats = set_specific_clear_counts(save_stats, chapter_id, clear_counts)
     helper.colored_text("Successfully set main story chapters")
     return save_stats
